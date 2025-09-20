@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Search Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #fff8e1; /* A yellowish background */
+            --main-color: #008080; /* Teal */
+            --light-teal: #c1e9e3;
+            --text-color: #333;
+            --border-color: #ccc;
+            --history-bg: #fff;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .tag-remove-btn svg, .history-delete-btn svg {
+            stroke: currentColor;
+            fill: none;
+        }
+    </style>
+</head>
+<body class="bg-[var(--bg-color)] text-[var(--text-color)] min-h-screen flex">
+
+    <!-- Left Panel -->
+    <div class="w-1/4 p-6 flex flex-col space-y-6">
+        <!-- Custom Keywords Input Box -->
+        <div class="bg-[var(--history-bg)] p-4 rounded-xl shadow-md">
+            <label for="keywordsInput" class="block font-medium mb-2 text-base">Custom Keywords</label>
+            <input type="text" id="keywordsInput" placeholder="Enter keywords, separated by spaces or commas..."
+                   class="w-full border border-[var(--border-color)] rounded-lg p-2 outline-none focus:ring-2 focus:ring-[var(--main-color)] transition-shadow">
+            <div id="keywordsList" class="flex flex-wrap mt-2 gap-2"></div>
+        </div>
+
+        <!-- Search History Box -->
+        <div class="bg-[var(--history-bg)] p-4 rounded-xl shadow-md max-h-80 overflow-y-auto">
+            <h3 class="font-medium mb-2 text-base">Search History</h3>
+            <ul id="historyList"></ul>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-grow flex flex-col items-center pt-24 px-4">
+        <div class="w-full max-w-2xl">
+            <h1 class="text-5xl font-bold text-center mb-8 text-[var(--main-color)]">Custom Search Engine</h1>
+            
+            <form id="searchForm" class="relative mb-6">
+                <input type="text" id="queryInput" placeholder="Search..."
+                       class="w-full border border-[var(--border-color)] rounded-full py-2 pl-4 pr-12 outline-none focus:shadow-lg transition-shadow">
+                <i class="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </form>
+
+            <div id="results" class="flex flex-col space-y-4"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Cookie Functions ---
+        function getCookie(name) {
+            const nameEQ = name + "=";
+            const ca = document.cookie.split(';');
+            for(let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+                if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+            }
+            return null;
+        }
+
+        function setCookie(name, value, days) {
+            let expires = "";
+            if (days) {
+                const date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                expires = "; expires=" + date.toUTCString();
+            }
+            document.cookie = name + "=" + (value || "") + expires + "; path=/";
+        }
+
+        // --- History Functions ---
+        function renderHistory() {
+            const history = JSON.parse(decodeURIComponent(getCookie('search_history') || '[]'));
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = '';
+            
+            if (history.length > 0) {
+                history.forEach((query, index) => {
+                    const listItem = document.createElement('li');
+                    listItem.className = 'flex justify-between items-center py-1 text-sm';
+                    listItem.innerHTML = `
+                        <span class="text-gray-600 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap" title="${query}">${query}</span>
+                        <button class="tag-remove-btn text-gray-500 hover:text-red-500 transition-colors ml-2" data-index="${index}">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    `;
+                    listItem.querySelector('span').onclick = () => {
+                        document.getElementById('queryInput').value = query;
+                        document.getElementById('searchForm').dispatchEvent(new Event('submit'));
+                    };
+                    listItem.querySelector('button').onclick = (e) => {
+                        e.stopPropagation();
+                        deleteHistoryItem(index);
+                    };
+                    historyList.appendChild(listItem);
+                });
+            } else {
+                historyList.innerHTML = '<li class="text-gray-500 text-sm">No recent searches.</li>';
+            }
+        }
+
+        function deleteHistoryItem(index) {
+            const history = JSON.parse(decodeURIComponent(getCookie('search_history') || '[]'));
+            history.splice(index, 1);
+            setCookie('search_history', encodeURIComponent(JSON.stringify(history)), 7);
+            renderHistory();
+        }
+
+        // --- Keywords Functions ---
+        function loadKeywordsFromCookie() {
+            const keywords = JSON.parse(decodeURIComponent(getCookie('custom_keywords') || '[]'));
+            keywords.forEach(addKeywordTag);
+        }
+
+        function saveKeywordsToCookie() {
+            const keywordsList = document.getElementById('keywordsList');
+            const keywords = Array.from(keywordsList.querySelectorAll('.keyword-tag span'))
+                               .map(el => el.textContent.trim());
+            setCookie('custom_keywords', encodeURIComponent(JSON.stringify(keywords)), 30);
+        }
+
+        function addKeywordTag(keyword) {
+            const keywordsList = document.getElementById('keywordsList');
+            const trimmedKeyword = keyword.trim();
+
+            if (trimmedKeyword !== '') {
+                const existingKeywords = Array.from(keywordsList.querySelectorAll('.keyword-tag span')).map(el => el.textContent.trim());
+                if (!existingKeywords.includes(trimmedKeyword)) {
+                    const tag = document.createElement('div');
+                    tag.className = 'keyword-tag flex items-center bg-[var(--light-teal)] text-[var(--main-color)] py-1 px-3 rounded-full text-sm';
+                    tag.innerHTML = `
+                        <span>${trimmedKeyword}</span>
+                        <button class="tag-remove-btn ml-2 text-gray-500 hover:text-red-500 transition-colors">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    `;
+                    tag.querySelector('button').onclick = () => {
+                        tag.remove();
+                        saveKeywordsToCookie();
+                    };
+                    keywordsList.appendChild(tag);
+                    saveKeywordsToCookie();
+                }
+            }
+        }
+
+        document.getElementById('keywordsInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === 'Comma') {
+                e.preventDefault();
+                const keywordsInput = document.getElementById('keywordsInput');
+                const keywords = keywordsInput.value.split(/[\s,]+/).filter(kw => kw.trim() !== '');
+                keywords.forEach(addKeywordTag);
+                keywordsInput.value = '';
+            }
+        });
+
+        // --- Initial Load & Form Submission ---
+        window.onload = function() {
+            renderHistory();
+            loadKeywordsFromCookie();
+        };
+
+        document.getElementById('searchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const queryInput = document.getElementById('queryInput');
+            const keywordsList = document.getElementById('keywordsList');
+            
+            let query = queryInput.value;
+            const keywords = Array.from(keywordsList.querySelectorAll('.keyword-tag span')).map(el => el.textContent.trim()).join(' ');
+            
+            if (keywords.trim() !== '') {
+                query = `${query} ${keywords}`;
+            }
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p class="text-center text-gray-500">Searching...</p>';
+            
+            const history = JSON.parse(decodeURIComponent(getCookie('search_history') || '[]'));
+            if (!history.includes(queryInput.value) && queryInput.value.trim() !== '') {
+                history.unshift(queryInput.value);
+                if (history.length > 10) {
+                    history.pop();
+                }
+                setCookie('search_history', encodeURIComponent(JSON.stringify(history)), 7);
+                renderHistory();
+            }
+
+            try {
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: query })
+                });
+
+                const data = await response.json();
+                
+                if (data.results && data.results.length > 0) {
+                    resultsDiv.innerHTML = '';
+                    data.results.forEach(result => {
+                        const resultItem = document.createElement('div');
+                        resultItem.className = 'p-4 border-b border-gray-200 last:border-b-0';
+                        resultItem.innerHTML = `
+                            <div class="text-sm text-green-700">${result.site}</div>
+                            <a href="${result.site}" target="_blank" class="text-lg font-medium text-[var(--main-color)] hover:underline transition-colors">${result.site.replace('https://', '').replace('http://', '')}</a>
+                            <p class="text-sm text-gray-600 mt-1">Similarity: ${result.similarity.toFixed(4)}</p>
+                        `;
+                        resultsDiv.appendChild(resultItem);
+                    });
+                } else {
+                    resultsDiv.innerHTML = '<p class="text-center text-gray-500">No results found.</p>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultsDiv.innerHTML = `<p class="text-center text-red-500">An error occurred while searching.</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
